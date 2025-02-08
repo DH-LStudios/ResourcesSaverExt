@@ -23,39 +23,39 @@ export const useAppSaveAllResource = () => {
     for (let i = 0; i < downloadList.length; i++) {
       const downloadItem = downloadList[i];
       dispatch(uiActions.setSavingIndex(i));
-      await new Promise(async (resolve) => {
-        let loaded = true;
-        if (i > 0 || tab?.url !== downloadItem.url) {
-          loaded = await new Promise((r) => {
-            const tabChangeHandler = (tabId, changeInfo) => {
-              if (tabId !== chrome.devtools.inspectedWindow.tabId || !changeInfo || !changeInfo.status) {
-                return;
-              }
-              if (changeInfo.status === 'loading') {
-                return;
-              }
-              if (changeInfo.status === 'complete') {
-                setTimeout(() => {
-                  r(true);
-                }, 2000);
-              } else {
-                r(false);
-              }
-              chrome.tabs.onUpdated.removeListener(tabChangeHandler);
-            };
-            chrome.tabs.onUpdated.addListener(tabChangeHandler);
-            setTimeout(function () {
-              dispatch(uiActions.setTab({ url: downloadItem.url }));
-              chrome.tabs.update(chrome.devtools.inspectedWindow.tabId, { url: downloadItem.url });
-            }, 500);
-          });
-        }
-        const toDownload = resolveDuplicatedResources([
-          ...(networkResourceRef.current || []),
-          ...(staticResourceRef.current || []),
-        ]);
-        console.log(toDownload.filter(t => typeof t?.content !== 'string' && !!t?.content?.then));
-        if (loaded && toDownload.length) {
+      let loaded = true;
+      if (i > 0 || tab?.url !== downloadItem.url) {
+        loaded = await new Promise((r) => {
+          const tabChangeHandler = (tabId, changeInfo) => {
+            if (tabId !== chrome.devtools.inspectedWindow.tabId || !changeInfo || !changeInfo.status) {
+              return;
+            }
+            if (changeInfo.status === 'loading') {
+              return;
+            }
+            if (changeInfo.status === 'complete') {
+              setTimeout(() => {
+                r(true);
+              }, 2000);
+            } else {
+              r(false);
+            }
+            chrome.tabs.onUpdated.removeListener(tabChangeHandler);
+          };
+          chrome.tabs.onUpdated.addListener(tabChangeHandler);
+          setTimeout(function () {
+            dispatch(uiActions.setTab({ url: downloadItem.url }));
+            chrome.tabs.update(chrome.devtools.inspectedWindow.tabId, { url: downloadItem.url });
+          }, 500);
+        });
+      }
+      const toDownload = resolveDuplicatedResources([
+        ...(networkResourceRef.current || []),
+        ...(staticResourceRef.current || []),
+      ]);
+      console.log(toDownload.filter(t => typeof t?.content !== 'string' && !!t?.content?.then));
+      if (loaded && toDownload.length) {
+        await new Promise((resolve) => {
           downloadZipFile(
             toDownload,
             { ignoreNoContentFile, beautifyFile },
@@ -71,8 +71,8 @@ export const useAppSaveAllResource = () => {
               resolve();
             }
           );
-        }
-      });
+        });
+      }
     }
     dispatch(uiActions.setStatus(UI_INITIAL_STATE.status));
     dispatch(uiActions.setIsSaving(false));
