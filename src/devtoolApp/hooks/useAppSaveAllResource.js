@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import * as uiActions from '../store/ui';
 import { downloadZipFile, resolveDuplicatedResources } from '../utils/file';
 import { logResourceByUrl } from '../utils/resource';
@@ -17,6 +17,13 @@ export const useAppSaveAllResource = () => {
     option: { ignoreNoContentFile, beautifyFile },
     ui: { tab },
   } = state;
+
+  const toDownload = useMemo(() => {
+    return resolveDuplicatedResources([
+      ...(networkResourceRef.current || []),
+      ...(staticResourceRef.current || []),
+    ]);
+  }, [networkResource, staticResource]);
 
   const handleOnSave = useCallback(async () => {
     dispatch(uiActions.setIsSaving(true));
@@ -49,11 +56,6 @@ export const useAppSaveAllResource = () => {
           }, 500);
         });
       }
-      const toDownload = resolveDuplicatedResources([
-        ...(networkResourceRef.current || []),
-        ...(staticResourceRef.current || []),
-      ]);
-      console.log(toDownload.filter(t => typeof t?.content !== 'string' && !!t?.content?.then));
       if (loaded && toDownload.length) {
         await new Promise((resolve) => {
           downloadZipFile(
@@ -76,15 +78,7 @@ export const useAppSaveAllResource = () => {
     }
     dispatch(uiActions.setStatus(UI_INITIAL_STATE.status));
     dispatch(uiActions.setIsSaving(false));
-  }, [state, dispatch, tab]);
-
-  useEffect(() => {
-    networkResourceRef.current = networkResource;
-  }, [networkResource]);
-
-  useEffect(() => {
-    staticResourceRef.current = staticResource;
-  }, [staticResource]);
+  }, [state, dispatch, tab, toDownload]);
 
   return { handleOnSave };
 };

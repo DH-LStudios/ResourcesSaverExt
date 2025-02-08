@@ -7,20 +7,15 @@ import * as zip from '@zip.js/zip.js';
 export const resolveDuplicatedResources = (resourceList = []) => {
   const resolvedListByKey = new Map();
   const result = [];
-  const resourceListUniqByUrl = Object.values(
-    resourceList.reduce(
-      (list, res) => ({
-        ...list,
-        ...(!list[res.url] || !list[res.url].content || res.content
-          ? {
-              [res.url]: res,
-            }
-          : {}),
-      }),
-      {}
-    )
-  );
-  resourceListUniqByUrl
+  const uniqueResources = new Map();
+
+  resourceList.forEach((res) => {
+    if (!uniqueResources.has(res.url) || !uniqueResources.get(res.url).content) {
+      uniqueResources.set(res.url, res);
+    }
+  });
+
+  Array.from(uniqueResources.values())
     .filter((r) => r && r.saveAs && r.saveAs.path && r.saveAs.name)
     .sort((rA, rB) => rA.saveAs.path.localeCompare(rB.saveAs.path))
     .forEach((r) => {
@@ -30,6 +25,7 @@ export const resolveDuplicatedResources = (resourceList = []) => {
       }
       resolvedListByKey.get(key).push(r);
     });
+
   resolvedListByKey.forEach((rGroup) => {
     result.push(
       ...(rGroup.length < 2
@@ -48,6 +44,7 @@ export const resolveDuplicatedResources = (resourceList = []) => {
           ))
     );
   });
+
   return result;
 };
 
