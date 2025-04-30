@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import * as uiActions from '../store/ui';
 import { downloadZipFile, resolveDuplicatedResources } from '../utils/file';
 import { logResourceByUrl } from '../utils/resource';
@@ -18,44 +18,46 @@ export const useAppSaveAllResource = () => {
     ui: { tab },
   } = state;
 
+  const toDownload = useMemo(() => {
+    return resolveDuplicatedResources([
+      ...(networkResourceRef.current || []),
+      ...(staticResourceRef.current || []),
+    ]);
+  }, [networkResource, staticResource]);
+
   const handleOnSave = useCallback(async () => {
     dispatch(uiActions.setIsSaving(true));
     for (let i = 0; i < downloadList.length; i++) {
       const downloadItem = downloadList[i];
       dispatch(uiActions.setSavingIndex(i));
-      await new Promise(async (resolve) => {
-        let loaded = true;
-        if (i > 0 || tab?.url !== downloadItem.url) {
-          loaded = await new Promise((r) => {
-            const tabChangeHandler = (tabId, changeInfo) => {
-              if (tabId !== chrome.devtools.inspectedWindow.tabId || !changeInfo || !changeInfo.status) {
-                return;
-              }
-              if (changeInfo.status === 'loading') {
-                return;
-              }
-              if (changeInfo.status === 'complete') {
-                setTimeout(() => {
-                  r(true);
-                }, 2000);
-              } else {
-                r(false);
-              }
-              chrome.tabs.onUpdated.removeListener(tabChangeHandler);
-            };
-            chrome.tabs.onUpdated.addListener(tabChangeHandler);
-            setTimeout(function () {
-              dispatch(uiActions.setTab({ url: downloadItem.url }));
-              chrome.tabs.update(chrome.devtools.inspectedWindow.tabId, { url: downloadItem.url });
-            }, 500);
-          });
-        }
-        const toDownload = resolveDuplicatedResources([
-          ...(networkResourceRef.current || []),
-          ...(staticResourceRef.current || []),
-        ]);
-        console.log(toDownload.filter(t => typeof t?.content !== 'string' && !!t?.content?.then));
-        if (loaded && toDownload.length) {
+      let loaded = true;
+      if (i > 0 || tab?.url !== downloadItem.url) {
+        loaded = await new Promise((r) => {
+          const tabChangeHandler = (tabId, changeInfo) => {
+            if (tabId !== chrome.devtools.inspectedWindow.tabId || !changeInfo || !changeInfo.status) {
+              return;
+            }
+            if (changeInfo.status === 'loading') {
+              return;
+            }
+            if (changeInfo.status === 'complete') {
+              setTimeout(() => {
+                r(true);
+              }, 2000);
+            } else {
+              r(false);
+            }
+            chrome.tabs.onUpdated.removeListener(tabChangeHandler);
+          };
+          chrome.tabs.onUpdated.addListener(tabChangeHandler);
+          setTimeout(function () {
+            dispatch(uiActions.setTab({ url: downloadItem.url }));
+            chrome.tabs.update(chrome.devtools.inspectedWindow.tabId, { url: downloadItem.url });
+          }, 500);
+        });
+      }
+      if (loaded && toDownload.length) {
+        await new Promise((resolve) => {
           downloadZipFile(
             toDownload,
             { ignoreNoContentFile, beautifyFile },
@@ -71,20 +73,12 @@ export const useAppSaveAllResource = () => {
               resolve();
             }
           );
-        }
-      });
+        });
+      }
     }
     dispatch(uiActions.setStatus(UI_INITIAL_STATE.status));
     dispatch(uiActions.setIsSaving(false));
-  }, [state, dispatch, tab]);
-
-  useEffect(() => {
-    networkResourceRef.current = networkResource;
-  }, [networkResource]);
-
-  useEffect(() => {
-    staticResourceRef.current = staticResource;
-  }, [staticResource]);
+  }, [state, dispatch, tab, toDownload]);
 
   return { handleOnSave };
 };

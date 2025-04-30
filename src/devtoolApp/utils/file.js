@@ -5,28 +5,28 @@ import postCssParser from 'prettier/parser-postcss';
 import * as zip from '@zip.js/zip.js';
 
 export const resolveDuplicatedResources = (resourceList = []) => {
-  const resolvedListByKey = {};
+  const resolvedListByKey = new Map();
   const result = [];
-  const resourceListUniqByUrl = Object.values(
-    resourceList.reduce(
-      (list, res) => ({
-        ...list,
-        ...(!list[res.url] || !list[res.url].content || res.content
-          ? {
-              [res.url]: res,
-            }
-          : {}),
-      }),
-      {}
-    )
-  );
-  resourceListUniqByUrl
+  const uniqueResources = new Map();
+
+  resourceList.forEach((res) => {
+    if (!uniqueResources.has(res.url) || !uniqueResources.get(res.url).content) {
+      uniqueResources.set(res.url, res);
+    }
+  });
+
+  Array.from(uniqueResources.values())
     .filter((r) => r && r.saveAs && r.saveAs.path && r.saveAs.name)
     .sort((rA, rB) => rA.saveAs.path.localeCompare(rB.saveAs.path))
     .forEach((r) => {
-      resolvedListByKey[r.saveAs.path] = (resolvedListByKey[r.saveAs.path] || []).concat([r]);
+      const key = r.saveAs.path;
+      if (!resolvedListByKey.has(key)) {
+        resolvedListByKey.set(key, []);
+      }
+      resolvedListByKey.get(key).push(r);
     });
-  Object.values(resolvedListByKey).forEach((rGroup) => {
+
+  resolvedListByKey.forEach((rGroup) => {
     result.push(
       ...(rGroup.length < 2
         ? rGroup
@@ -44,19 +44,20 @@ export const resolveDuplicatedResources = (resourceList = []) => {
           ))
     );
   });
+
   return result;
 };
 
-export const downloadZipFile = (toDownload, options, eachDoneCallback, callback) => {
+export const downloadZipFile = async (toDownload, options, eachDoneCallback, callback) => {
   const blobWrite = new zip.BlobWriter('application/zip');
   const zipWriter = new zip.ZipWriter(blobWrite);
-  addItemsToZipWriter(
+  await addItemsToZipWriter(
     zipWriter,
     toDownload,
     options,
-    eachDoneCallback,
-    downloadCompleteZip.bind(this, zipWriter, blobWrite, callback)
+    eachDoneCallback
   );
+  await downloadCompleteZip(zipWriter, blobWrite, callback);
 };
 
 // Create a reader of the content for zip
@@ -70,7 +71,7 @@ export const getContentRead = (item) => {
   return new zip.TextReader(item.content || 'No Content: ' + item.url);
 };
 
-export const addItemsToZipWriter = (zipWriter, items, options, eachDoneCallback, callback) => {
+export const addItemsToZipWriter = async (zipWriter, items, options, eachDoneCallback) => {
   const item = items[0];
   const rest = items.slice(1);
 
@@ -134,40 +135,34 @@ export const addItemsToZipWriter = (zipWriter, items, options, eachDoneCallback,
       console.log('[DEVTOOL]', 'EXCLUDED: ', item.url);
       eachDoneCallback(item, true);
       // To the next item
-      addItemsToZipWriter(zipWriter, rest, options, eachDoneCallback, callback);
+      await addItemsToZipWriter(zipWriter, rest, options, eachDoneCallback);
     } else {
       // Make sure the file has some byte otherwise no import to avoid corrupted zip
       if (resolvedContent.size > 0 || resolvedContent['blobReader']?.size > 0) {
-        zipWriter.add(item.saveAs.path, resolvedContent).finally(() => {
-          eachDoneCallback(item, true);
-          addItemsToZipWriter(zipWriter, rest, options, eachDoneCallback, callback);
-        });
+        await zipWriter.add(item.saveAs.path, resolvedContent);
+        eachDoneCallback(item, true);
+        await addItemsToZipWriter(zipWriter, rest, options, eachDoneCallback);
       } else {
         // If no size, exclude the item
         console.log('[DEVTOOL]', 'EXCLUDED: ', item.url);
         eachDoneCallback(item, false);
         // To the next item
-        addItemsToZipWriter(zipWriter, rest, options, eachDoneCallback, callback);
+        await addItemsToZipWriter(zipWriter, rest, options, eachDoneCallback);
       }
     }
-  } else {
-    // Callback when all done
-    callback();
   }
-  return rest;
 };
 
-export const downloadCompleteZip = (zipWriter, blobWriter, callback) => {
-  zipWriter.close();
-  blobWriter.getData().then((blob) => {
-    chrome.tabs.get(chrome.devtools.inspectedWindow.tabId, function (tab) {
-      let url = new URL(tab.url);
-      let filename = url.hostname ? url.hostname.replace(/([^A-Za-z0-9.])/g, '_') : 'all';
-      let a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename + '.zip';
-      a.click();
-      callback();
-    });
+export const downloadCompleteZip = async (zipWriter, blobWriter, callback) => {
+  await zipWriter.close();
+  const blob = await blobWriter.getData();
+  chrome.tabs.get(chrome.devtools.inspectedWindow.tabId, function (tab) {
+    let url = new URL(tab.url);
+    let filename = url.hostname ? url.hostname.replace(/([^A-Za-z0-9.])/g, '_') : 'all';
+    let a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename + '.zip';
+    a.click();
+    callback();
   });
 };
