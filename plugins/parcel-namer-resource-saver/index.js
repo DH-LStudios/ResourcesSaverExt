@@ -1,17 +1,17 @@
 const { Namer } = require('@parcel/plugin');
 const path = require('path');
 
-const filenames = [];
+const filenames = new Set();
 
 const handleDuplicatedName = (filename) => {
-  if (filenames.includes(filename)) {
+  if (filenames.has(filename)) {
     const ext = path.extname(filename);
     const regEx = new RegExp(`${ext}$`);
-    filenames.push(filename.replace(regEx, `.d${ext}`));
+    filenames.add(filename.replace(regEx, `.d${ext}`));
   } else {
-    filenames.push(filename);
+    filenames.add(filename);
   }
-  return filenames[filenames.length - 1];
+  return Array.from(filenames).pop();
 };
 
 module.exports = new Namer({
